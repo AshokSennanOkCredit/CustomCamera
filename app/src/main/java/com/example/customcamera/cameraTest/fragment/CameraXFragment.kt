@@ -20,6 +20,7 @@ import com.example.customcamera.cameraTest.interaction_camera.CameraInteractionF
 import kotlinx.android.synthetic.main.fragment_camera_x.*
 import java.util.concurrent.Executor
 import androidx.camera.core.*
+import androidx.lifecycle.LifecycleOwner
 import com.camera.AutoFitPreviewBuilder
 import com.example.customcamera.TestCameraCustom
 import com.example.customcamera.utils.Picture
@@ -158,9 +159,12 @@ class CameraXFragment : Fragment(),CameraInteractionFragment.Interactor {
             setImageReaderMode(ImageAnalysis.ImageReaderMode.ACQUIRE_LATEST_IMAGE)
             setTargetRotation(textureView.display.rotation)
         }.build()
-        imageAnalyser = ImageAnalysis(analyserConfig).apply {
 
+        imageAnalyser = ImageAnalysis(analyserConfig).apply {
+            setAnalyzer(mainExecutor,LuminosyteAnalyser())
         }
+
+        CameraX.bindToLifecycle(context as LifecycleOwner,preview,imageCapture,imageAnalyser)
     }
 
     private fun aspectRatio(widthPixels: Int, heightPixels: Int): AspectRatio {
@@ -172,45 +176,6 @@ class CameraXFragment : Fragment(),CameraInteractionFragment.Interactor {
     }
 
 
-    private class LuminosyteAnalyser(listener: lumaListener?=null):ImageAnalysis.Analyzer{
-        private val listeners = ArrayList<lumaListener>().apply {
-            listener?.let { add(it) }
-        }
-        private var lastAnalysedTime:Long = 0L
-
-        override fun analyze(image: ImageProxy, rotationDegrees: Int) {
-            if(listeners.isEmpty()) return
-            val currentTimeStamp = System.currentTimeMillis()
-            if(currentTimeStamp - lastAnalysedTime >= TimeUnit.SECONDS.toMillis(1)){
-                lastAnalysedTime = currentTimeStamp
-
-                // Since format in ImageAnalysis is YUV, image.planes[0] contains the luminance
-                //  plane
-                val buffer = image.planes[0].buffer
-
-                // Extract image data from callback object
-                val data = buffer.toByteArray()
-
-                // Convert the data into an array of pixel values ranging 0-255
-                val pixels = data.map { it.toInt() and 0xFF }
-
-                // Compute average luminance for the image
-                val luma = pixels.average()
-
-                // Call all listeners with new value
-                listeners.forEach { it(luma) }
-            }
-
-        }
-
-        private fun ByteBuffer.toByteArray(): ByteArray {
-            rewind()    // Rewind the buffer to zero
-            val data = ByteArray(remaining())
-            get(data)   // Copy the buffer into a byte array
-            return data // Return the byte array
-        }
-
-    }
 
 
     //************** interaction callbacks **********************//
@@ -263,3 +228,38 @@ class CameraXFragment : Fragment(),CameraInteractionFragment.Interactor {
     }
 
 }
+
+private class LuminosyteAnalyser():ImageAnalysis.Analyzer{
+
+        private var lastAnalysedTime:Long = 0L
+
+        override fun analyze(image: ImageProxy, rotationDegrees: Int) {
+            val currentTimeStamp = System.currentTimeMillis()
+            if(currentTimeStamp - lastAnalysedTime >= TimeUnit.SECONDS.toMillis(1)){
+                lastAnalysedTime = currentTimeStamp
+
+                // Since format in ImageAnalysis is YUV, image.planes[0] contains the luminance
+                //  plane
+                val buffer = image.planes[0].buffer
+
+                // Extract image data from callback object
+                val data = buffer.toByteArray()
+
+                // Convert the data into an array of pixel values ranging 0-255
+                val pixels = data.map { it.toInt() and 0xFF }
+
+                // Compute average luminance for the image
+                val luma = pixels.average()
+
+            }
+
+        }
+
+        private fun ByteBuffer.toByteArray(): ByteArray {
+            rewind()    // Rewind the buffer to zero
+            val data = ByteArray(remaining())
+            get(data)   // Copy the buffer into a byte array
+            return data // Return the byte array
+        }
+
+    }
